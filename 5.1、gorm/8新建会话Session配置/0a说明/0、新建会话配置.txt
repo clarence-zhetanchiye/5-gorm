@@ -1,0 +1,137 @@
+初始会话是 gormDB, err = gorm.Open(mysql.Open(dst), &gorm.Config{}) 中的gormDB
+新建会话是 newSession1 := gormDB.Session()  、  newSession2 := gormDB.WithContext()   、 newSession3 := gormDB.Debug()
+         中的newSession1、newSession2、newSession3 ；
+         后两种方式的本质和newSession1 := gormDB.Session()是一样的，也是配置Session中的字段来新建Session会话。
+
+和创建初始会话gormDB时可以配置&gorm.Config{}内的字段一样，由初始会话gormDB新建Session会话时
+也可以配置Session中的字段（使用.WithContext()和.Debug()的本质其实也是配置Session中的字段来新建Session会话）
+下面的Session结构体中的字段的功能含义，还可参见boardmix图谱中容器二中Config结构体内字段的解释。
+type Session struct {
+    DryRun                   bool   //见解释4。
+    PrepareStmt              bool   //见解释5。
+    NewDB                    bool   //见解释7。
+    Initialized              bool   //创建一个新的初始化gormDB，但是会有污染？？
+    SkipHooks                bool   //跳过钩子方法。
+    SkipDefaultTransaction   bool   //见解释11。
+    DisableNestedTransaction bool   //见解释8。
+    AllowGlobalUpdate        bool   //见解释6。
+    FullSaveAssociations     bool   //和结构体继承及数据表隶属有关，生产中用不到。
+    QueryFields              bool   //见解释9。
+    Context                  context.Context    //见解释1。
+    Logger                   logger.Interface   //见解释2。
+    NowFunc                  func() time.Time   //改变 GORM 获取当前时间的实现
+    CreateBatchSize          int    //见解释10。
+}
+
+1、配置Context
+    通过配置Context字段，作用就和使用.WithContext()是一样的，这样做就可以通过Context来控制sql执行的超时、主动取消sql的执行等：
+    timeoutCtx, _ := context.WithTimeout(context.Background(), time.Second)
+    seDB := db.Session(&Session{Context: timeoutCtx})
+    seDB.First(&user) // 带有 context timeoutCtx 的查询操作
+    seDB.Model(&user).Update("role", "admin") // 带有 context timeoutCtx 的更新操作
+
+    GORM 也提供了简写形式的方法 WithContext，其实现如下：
+    func (db *DB) WithContext(ctx context.Context) *DB {
+      return db.Session(&Session{WithConditions: true, Context: ctx})
+    }
+
+2、配置Debug
+    配置Debug字段，作用和使用.Debug()是一样的。Debug()本质就是将Session会话的 Logger 修改为调试模式的简写形式，其实现如下：
+    func (db *DB) Debug() (tx *DB) {
+      return db.Session(&Session{
+        Logger:         db.Logger.LogMode(logger.Info),
+      })
+    }
+
+2、配置Logger
+    Gorm 允许使用 Logger 选项自定义内置 Logger，例如：
+    newLogger := logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags),
+                  logger.Config{
+                    SlowThreshold: time.Second,
+                    LogLevel:      logger.Silent,
+                    Colorful:      false,
+                  })
+    db.Session(&Session{Logger: newLogger}) //自定义的newLogger
+    db.Session(&Session{Logger: logger.Default.LogMode(logger.Silent)})  //GORM库中的logger
+
+4、配置DryRun
+   DryRun为true会由gorm语句构建生成sql但不执行sql，可以用于测试生成的sql，也可以用于提高MySQL的效率，因为gorm和标准库一般都是先把带占
+   位符?的sql语句（即无值的sql）发送给MySQL，然后再把相应的参数值发给MySQL（这样可以防止sql注入的安全风险，参见GORM官方文档/高级/安全），
+   为提高效率可以先组成完整的带值的sql，再发给MySQL去直接予以执行（但这样就没有规避sql注入这种安全风险，参见 GORM官方文档/高级/安全）；
+   [可以通过 gormDB.Dialector.Explain(gormDB.Statement.SQL.String(), gormDB.Statement.Vars...) 来用值替代?组成最终带值sql]
+   这需要为MySQL开启interpolateparams以减少roundtrip，见https://github.com/go-sql-driver/mysql#interpolateparams。
+  示例：
+  stmt := db.Session(&Session{DryRun: true}).First(&user, 1).Statement //打印user会发现是零值
+  stmt.SQL.String() //=> SELECT * FROM users WHERE id = 1 ORDER BY `id`
+  stmt.Vars         //=> []interface{}{1}
+
+  db.Dialector.Explain(stmt.SQL.String(), stmt.Vars...) //用最终的值替换占位符?，得到最终的sql语句
+  // SELECT * FROM `users` WHERE `id` = 1
+
+5、配置PrepareStmt  预编译
+   PreparedStmt在执行任何sql语句时都会创建一个prepared statement并让MySQL将该sql缓存在数据库中,以提高后续的效率，
+   下次再进行同样的查询（sql语句相同，只是参数值不同），该sql语句在MySQL中已经被解析过并进行了缓存，这次执行就会快很多
+   示例：
+   seDb := db.Session(&Session{PrepareStmt: true})
+   seDb.First(&user, 1)
+   seDb.Find(&users)
+   seDb.Model(&user).Update("Age", 18)
+
+   stmtManger, ok := seDb.ConnPool.(*PreparedStmtDB)//返回一个prepared statements manager
+   stmtManger.PreparedSQL //类型为[]string{} ，记录的是当前会话中已经预编译的sql。
+   stmtManger.Stmts //类型为map[string]*sql.Stmt，记录了当前会话中已预编译的sql及对应的预编译模式，即标准库的*sql.Stmt 。
+   for sql, stmt := range stmtManger.Stmts {
+     sql  //这个就是在MySQL中已经预编译的sql
+     stmt //这个是对应的预编译模式
+     stmt.Close() //逐个关闭预编译模式
+   }
+  //关闭当前会话的预编译模式。等价于上面的for...range遍历地stmt.Close()
+  stmtManger.Close()
+
+6、配置AllowGlobalUpdate
+    默认情况下,GORM不允许全局update/delete,它会返回ErrMissingWhereClause错误，你可以将该选项置
+    为 true 以允许全局操作，例如：
+    db.Session(&gorm.Session{AllowGlobalUpdate: true,}).Model(&User{}).Update("name", "jinzhu")
+    //等价于sql语句的 UPDATE users SET name = "jinzhu"  会把uers表name列的所有行的值改为“jinzhu”
+
+7、配置NewDB
+    该字段设为true，可以让新建会话前的Where()条件不再参与之后的gorm语句。
+    // 当`NewDB`字段为false
+    tx2 := db.Where("name = ?", "jinzhu").Session(&gorm.Session{})
+    tx2.First(&user)    // SELECT * FROM users WHERE name = "jinzhu" ORDER BY id
+    // 当`NewDB`字段为true
+    tx := db.Where("name = ?", "jinzhu").Session(&gorm.Session{NewDB: true})
+    tx.First(&user)   // SELECT * FROM users ORDER BY id LIMIT 1
+    tx.First(&user, "id = ?", 10)   // SELECT * FROM users WHERE id = 10 ORDER BY id
+
+
+    （在老版本GORM中与上述等价的配置是Session的WithConditions字段）
+    // 共享 WithConditions,即复用新建session会话的旧db会话下的一条拖拉机
+    seDb := db.Where("name = ?", "jinzhu").Session(&gorm.Session{WithConditions: true})
+    seDb.First(&user)      // SELECT * FROM users WHERE name = "jinzhu" ORDER BY id
+    seDb.First(&user, "id = ?", 10)      // SELECT * FROM users WHERE name = "jinzhu" AND id = 10 ORDER BY id
+    // 不共享 WithConditions,即不复用新建session会话的旧db会话下的一条拖拉机
+    seDb2 := db.Where("name = ?", "jinzhu").Session(&gorm.Session{WithConditions: false})
+    seDb2.First(&user)       // SELECT * FROM users ORDER BY id
+
+
+8、配置DisableNestedTransaction
+    true为禁用Transaction型事务(非手动事务)嵌套。一般没必要禁用。
+
+9、配置QueryFields
+    db.Session(&gorm.Session{QueryFields: true}).Find(&user)
+    // SELECT `users`.`name`, `users`.`age`, ... FROM `users` // QueryFields字段设为true时
+    // SELECT * FROM `users` // QueryFields字段不设为true时
+    更重要的用途是配合
+
+10、配置CreateBatchSize
+    users = [5000]User{{Name: "jinzhu", Pets: []Pet{pet1, pet2, pet3}}...}
+    db.Session(&gorm.Session{CreateBatchSize: 1000}).Create(&users)
+    // INSERT INTO users xxx (需 5 次)
+    // INSERT INTO pets xxx (需 15 次)
+
+11、配置SkipDefaultTransaction
+    GORM默认在事务里执行 增、改、删 操作以确保数据一致性。如果没有这方面的要求，在初始化时
+    禁用它，这将获得大约 30%+ 性能提升。
+
+（完）

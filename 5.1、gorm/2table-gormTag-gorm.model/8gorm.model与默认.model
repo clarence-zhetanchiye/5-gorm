@@ -1,0 +1,10 @@
+GORM包中已经定义好的gorm.Model{}结构体，程序员可直接在结构体中继承地使用该结构体。
+
+type Model struct {
+    ID        uint `gorm:"primarykey"`
+    CreatedAt time.Time
+    UpdatedAt time.Time
+    DeletedAt DeletedAt `gorm:"index"`
+}
+
+关于里面四个字段的默认功能，详见 7gorm标签&GORM的默认.txt 中的第3条

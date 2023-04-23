@@ -1,0 +1,8 @@
+Gorm版本v1.0到v1.9.16是在仓库https://github.com/jinzhu/gorm 中，代码中导入时写import "github.com/jinzhu/gorm"
+
+
+=====按Go的约定，当包的新版本不再兼容旧版本时，导入路径需改变，故在推出新版本v2时gorm的仓库位置改变（因go生态的怪癖，v2被标记为>=v1.20.0）
+
+
+Gorm版本v1.20.0(即版本v2)及之后是在仓库 https://github.com/go-gorm/gorm 中，代码中导入时写 import "gorm.io/gorm"
+进入本版v2的github上的仓库，就可以看到该库的使用文档的链接。

@@ -1,0 +1,84 @@
+在使用gorm时，首先就要写如下代码，
+var MyDb *gorm.DB
+MyDb, err = gorm.Open(mysql.Open(dst), &gorm.Config{})
+其中，mysql.Open(dst) 见如下的@@11@@，&gorm.Config 见如下结构体。详细情况可见gorm.Open(mysql.Open(dst), &gorm.Config{})的源码。
+
+type Config struct {														          @@22@@
+    SkipDefaultTransaction                 	bool
+    NamingStrategy                           	schema.Namer	//数据库表、列的名称策略
+    FullSaveAssociations                     	bool
+    Logger                           		logger.Interface	//gorm操作数据库产生的日志，默认为 logger.Default
+    NowFunc                                 	func() time.Time       //{ return time.Now().Local() }
+    DryRun                                   	bool
+    PrepareStmt                              	bool
+    DisableAutomaticPing                     	bool
+    DisableForeignKeyConstraintWhenMigrating bool
+    AllowGlobalUpdate                        	bool
+|--ClauseBuilders                           	map[string]clause.ClauseBuilder //每个map值都是sql片段，用于拼成完整sql，参见gorm.io/driver/mysql包的mysql.go的95行
+|   Dialector  --------------------------------本匿名接口字段赋值为gorm.io/driver包的 mysql.Open(dsn string) ，因其实现了要求的方法（下面标记了··的那些方法）	         @@11@@
+|---ConnPool                                 	ConnPool				|
+|   Plugins           map[string]Plugin					|
+|			 					|
+|   callbacks     | --*callbacks	//sql语句的crud模板，供给Statement去套用	|
+|   cacheStore  |   *sync.Map	//缓存的预操作sql。键为"preparedStmt"		|
+|}	      |		 					|
+|	      |					type Dialector struct {
+|	      |					       *Config
+|	      |					}
+|	      |					··func (d Dialector) Name () string
+|—————— |————————————————————	··func (d Dialector) Initialize (db *gorm.DB) (err error) //调标准库sql.Open(....)得到sql.DB赋给ConnPool字段
+	      |								   		//给callbacks字段赋值，给ClauseBuildes字段赋值。<----|
+|——————-|————————————————————	func (d Dialector) ClauseBuilders () map[string]clause.ClauseBuilder  -------------------------------------------|
+	      |					··func (d Dialector) DefaultValueOf (field *schema.Field) clause.Expression
+	      |					··func (d Dialector) Migrator (db *gorm.DB) gorm.Migrator
+	      |					··func (d Dialector) BindVarTo (writer clause.Writer, stmt *gorm.Statement, v interface{})
+	      |					··func (d Dialector) QuoteTo (writer clause.Writer, str string)
+	      |					··func (d Dialector) Explain (sql string, vars ...interface{}) string 
+	      |					··func (d Dialector) DataTypeOf(field *schema.Field) string
+	      |					func (d Dialector) SavePoint (tx *gorm.DB, name string) error
+	      |					func (d Dialector) RollbackTo (tx *gorm.DB, name string) error
+                      |
+                      |
+type callbacks struct {
+    processors map[string]*processor
+}
+func(c callbacks) Create() *processor
+func(c callbacks) Query() *processor
+func(c callbacks) Update() *processor
+func(c callbacks) Delete() *processor
+func(c callbacks) Row() *processor
+func(c callbacks) Raw() *processor
+
+type processor struct {
+    db        	*DB
+    fns       		[ ]func(*DB)
+    callbacks 	[ ]*callback
+}
+func(p processor) Execute(db *gorm.DB)
+func(p processor) Get(name string) func(*gorm.DB)
+func(p processor) Before(name string) *gorm.callback
+func(p processor) After(name string) *gorm.callback
+func(p processor) Match(fc func(*gorm.DB) bool) *gorm.callback
+func(p processor) Register(name string, fn func(*gorm.DB)) error
+func(p processor) Remove(name string) error
+func(p processor) Replace(name string, fn func(*gorm.DB)) error
+func(p processor) compile() (err error)
+
+type callback struct {
+    name      string
+    before    string
+    after     string
+    remove    bool
+    replace   bool
+    match     func(*DB) bool
+    handler   func(*DB)
+    processor *processor
+}
+func(c callback) Before(name string) *gorm.callback
+func(c callback) After(name string) *gorm.callback
+func(c callback) Register(name string, fn func(*gorm.DB)) error
+func(c callback) Remove(name string) error
+func(c callback) Replace(name string, fn func(*gorm.DB)) error
+
+
+（完）

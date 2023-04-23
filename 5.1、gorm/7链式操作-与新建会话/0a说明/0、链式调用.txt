@@ -1,0 +1,126 @@
+对于一条gorm语句，例如：
+        gormDB.Table("users").Where("name = ?", "jinzhu").Where("age > ?", 18).Group("role").Find(&user)
+Finisher方法：如上面例子中的Find()方法。是指会立即将一条gorm语句生成为sql语句并执行的一类方法，即Finisher方法是
+             会立即执行注册回调并生成和执行sql的方法。Finisher方法有很多，比如 Create(),Find(), Update(),
+             Delete() 等等，详见boardmix图谱中紫色标记的那些方法。
+链式方法:如上面例子中的两个where()和Group()方法。是指一条gorm语句中会话实例gormDB和Finisher方法之间的那些方法，
+        每个链式方法都将自己的Clauses修改或添加到当前会话的Statement中，作为sql条件一起来拼接构建sql语句。链式
+        方法有很多，比如Model(), Table(),Select(), Where(), Joins(), Group()等等，详见boardmix图谱中黄
+        色标记的那些方法。
+
+
+====================
+    在gorm语句中，链式方法、Finisher方法的返回值仍是*gorm.DB类型实例，但不同于通过gorm与数据库Open()初始化建立获得的初始会话实例gormDB，
+此时返回的*gorm.DB类型实例由于其中的Statement已经携带了Clauses，即携带了sql条件，当继续复用该*gorm.DB类型实例写新的gorm语句时，之前已经
+携带的Clauses即已携带的sql条件仍会在新的gorm语句中生效，
+例如：
+    queryDB := gormDB.Where("name = ?", "jinzhu") //todo:这里的queryDB由于携带有一个链式方法Where()条件，因此已经不是初始会话实例。
+
+    queryDB.Where("age > ?", 10).First(&user)
+    // SELECT * FROM users WHERE name = "jinzhu" AND age > 10
+
+    queryDB.Where("age > ?", 20).First(&user2)
+    // SELECT * FROM users WHERE name = "jinzhu" AND age > 10 AND age > 20   //todo:注意看这里的age>10
+
+    todo:实际生产中，常根据不同的if条件来拼接不同的链式方法，因此实际生产中一般不会产生上面这种情况。
+
+todo:如果想避免上面这种影响，可以每个gorm语句都重新使用初始会话实例gormDB开头来写，或者使用新建会话方法，
+例如：
+    queryDB := DB.Where("name = ?", "jinzhu").Session(&gorm.Session{})//todo:这里的queryDB因调用了Session()，故已是一个新建会话
+
+    queryDB.Where("age > ?", 10).First(&user)
+    // SELECT * FROM users WHERE name = "jinzhu" AND age > 10
+
+    queryDB.Where("age > ?", 20).First(&user2)
+    // SELECT * FROM users WHERE name = "jinzhu" AND age > 20   //todo:注意看这里再没有age>10了
+
+新建会话方法的三种方式，详见下面的讲解！
+====================
+
+
+新建会话方法：
+       通过gorm与数据库初始化建立连接时【gormDB, err = gorm.Open(mysql.Open(dst), &gorm.Config{})】可得到初始会话gormDB ，
+       在该初始会话gormDB的基础上新建会话：
+       (1)新建会话Session()  ：  newSession := gormDB.Session()
+            Session()方法具体为
+                        func (db *DB) Session(s *Session) *DB {
+                                入参s为nil时
+                        		return tx := &DB{Config: db.Config,  Statement: db.Statement, Error: db.Error,  clone:1}
+                                }
+       (2)新建会话WithContext() :  newSession := gormDB.WithContext()
+            WithContext()方法具体为
+            func (db *DB) WithContext(ctx context.Context) *DB {
+                              return db.Session(&Session{WithConditions: true, Context: ctx})
+                          }
+       (3)新建会话Debug()  ：  newSession := gormDB.Debug()
+            Debug()方法体具体为
+            func (db *DB) Debug() (tx *DB) {
+                              return db.Session(&Session{WithConditions: true,Logger: db.Logger.LogMode(logger.Info)})
+                         }
+
+      (III)todo 从一个会话(如db)新建另一个会话(如Session)后，则是另起炉灶，但对于发起新建
+            会话的旧会话(如db)下的那条拖拉机扑克(如果有)，新会话下的各条拖拉机扑克都会复
+            用它【gorm.Session{WithConditions: false}可以禁用】，但新会话下的各条拖拉
+            机扑克彼此之间互不干涉。
+
+
+-------------------------------------------------------示例1-----------------------------------------------------------
+gormDB, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{}) //这里获得的gormDB就是初始会话实例，也可以认为是一个全局的会话。
+
+gormDB.Where("name = ?", "jinzhu").Where("age = ?", 18).Find(&users)
+// SELECT * FROM users WHERE name = 'jinzhu' AND age = 18;
+
+gormDB.Where("name = ?", "jinzhu2").Where("age = ?", 20).Find(&users) //gormDB仍是初始化会话，故不受上条gorm语句中链式方法的干扰
+// SELECT * FROM users WHERE name = 'jinzhu2' AND age = 20;
+
+gormDB.Find(&users) //gormDB仍是初始化会话，故不受上条gorm语句中链式方法的干扰
+// SELECT * FROM users;
+
+-------------------------------------------------------示例2-----------------------------------------------------------
+gormDB, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})//这里获得的gormDB就是初始会话实例，也可以认为是一个全局的会话。
+
+tx := gormDB.Where("name = ?", "jinzhu") //todo:这里的tx由于携带有一个链式方法Where()条件，故已经不是初始会话实例，又不是新建会话。
+
+tx.Where("age = ?", 18).Find(&users)
+//SELECT * FROM users WHERE name = 'jinzhu' AND age = 18  //todo:注意看这里的name='jinzhu'
+
+tx.Where("age = ?", 28).Find(&users)
+//SELECT * FROM users WHERE name = 'jinzhu' AND age = 18 AND age = 28 //todo 注意看这里的name = 'jinzhu' AND age = 18
+
+-------------------------------------------------------示例3-----------------------------------------------------------
+gormDB, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{}) //这里获得的gormDB就是初始会话实例，也可以认为是一个全局的会话。
+
+for i := 0; i < 100; i++ {
+  go gormDB.Where(...).First(&user) //没问题！
+  //每个协程里gorm语句中的gormDB都是初始会话实例，不同协程gorm语句里的链式方法不会彼此叠加影响，是协程安全的
+}
+
+tx := gormDB.Where("name = ?", "jinzhu")//todo:这里的tx由于携带有一个链式方法Where()条件，因此已经不是初始会话实例，又不是新建会话。
+for i := 0; i < 100; i++ {
+  go tx.Where(...).First(&user) //有问题！
+  //todo:tx不是初始化会话实例也不是新建会话，因此不同协程的gorm语句里的链式方法彼此叠加影响，是不安全的协程
+}
+
+-------------------------------------------------------示例4-----------------------------------------------------------
+ctx, _ := context.WithTimeout(context.Background(), time.Second)
+ctxDB := gormDB.WithContext(ctx) //todo:这里的ctxDB是一个基于初始会话实例gormDB的新建会话。
+for i := 0; i < 100; i++ {
+  go ctxDB.Where(...).First(&user) //没问题
+  //每个协程里gorm语句中的ctxDB都是新建会话实例，不同协程gorm语句里的链式方法不会彼此叠加影响，是协程安全的
+}
+
+ctx, _ := context.WithTimeout(context.Background(), time.Second)
+ctxDB := gormDB.Where("name = ?", "jinzhu").WithContext(ctx)//todo:这里的ctxDB是基于初始会话实例gormDB的新建会话，且已有一个Where()。
+for i := 0; i < 100; i++ {
+  go ctxDB.Where(...).First(&user) //没问题
+  //每个协程里gorm语句中的ctxDB都是新建会话实例，不同协程gorm语句里的链式方法不会彼此叠加影响，是协程安全的
+  //todo 上两行的 `name = 'jinzhu'`会被复用到每一个协程的gorm语句中
+}
+
+tx := gormDB.Where("name = ?", "jinzhu").Session(&gorm.Session{WithConditions: true})
+for i := 0; i < 100; i++ {
+  go tx.Where(...).First(&user) //没问题
+  //每个协程里gorm语句中的tx都是新建会话实例，不同协程gorm语句里的链式方法不会彼此叠加影响，是协程安全的
+}//todo 上两行的 `name = 'jinzhu'`会被复用到每一个协程的gorm语句中
+
+（完）

@@ -1,0 +1,53 @@
+todo 创建db *gorm.DB初始会话时，可以进行全局配置==================================================================================
+db, err = gorm.Open(mysql.Open(dstn), &gorm.Config{})
+type Config struct {-----------------------------|
+    SkipDefaultTransaction                   bool
+    NamingStrategy                           schema.Namer
+    FullSaveAssociations                     bool
+    Logger                                   logger.Interface
+    NowFunc                                  func() time.Time
+    DryRun                                   bool
+    PrepareStmt                              bool
+    DisableAutomaticPing                     bool
+    DisableForeignKeyConstraintWhenMigrating bool //todo:是用于有继承结构体的结构体（即有主、从数据表）迁移建表，实际生产不会用到。
+    DisableNestedTransaction                 bool
+    AllowGlobalUpdate                        bool
+    QueryFields                              bool
+    CreateBatchSize                          int
+    ClauseBuilders                           map[string]clause.ClauseBuilder
+    ConnPool                                 ConnPool
+    Dialector
+    Plugins    map[string]Plugin
+    callbacks  *callbacks
+    cacheStore *sync.Map
+}
+todo 上面Config结构体各个字段的用途见boardmix图谱上的容器二、8新建会话Session配置/。或GORM官网/高级主题/GORM配置
+
+
+//todo==================================================GORM的重要默认====================================================
+// 1、SkipDefaultTransaction的零值是false，即GORM默认在事务里执行写入操作（创建、更新、删除）和相应的钩子。禁用它可以提高30%的性能。
+// 2、NamingStrategy的零值是false，即迁移建表或结构体与表对应时，GORM默认是采用蛇形规则，来让结构体和数据表对应（结构体表名与数据表名，结构
+//    体字段与数据表列名）。且迁移建表时默认结构体中名为ID或Id的字段为主键，也可以通过 `gorm:"primaryKey"` 这个标签来自定义地指定结构体中
+//    的其他字段为主键。
+// 2.1、NamingStrategy也可以由自定义地去实现，
+//     命名策略被用于构建TableName、ColumnName、JoinTableName、RelationshipFKName、CheckerName、IndexName。
+// 2.2、另外，可以通过在结构体下写签名为TableName() string的方法，来更改迁移建表、结构体与表对应时
+//    的数据表名；还可以在gorm语句中动态地去和数据表对应。详见 2table-gormTag-gorm.model/6table_name.go。
+// 3、DryRun为true会由gorm语句构建生成sql但不执行sql，可以用于测试生成的sql，也可以用于提高MySQL的效率，因为gorm和标准库一般都是先把带占
+//   位符?的sql语句（即无值的sql）发送给MySQL，然后再把相应的参数值发给MySQL（这样可以防止sql注入的安全风险，参见GORM官方文档/高级/安全），
+//   为提高效率可以先组成完整的带值的sql，再发给MySQL去直接予以执行（但这样就没有规避sql注入这种安全风险，参见 GORM官方文档/高级/安全）；
+//   [可以通过 gormDB.Dialector.Explain(gormDB.Statement.SQL.String(), gormDB.Statement.Vars...) 来用值替代?组成最终带值sql]
+//   这需要为MySQL开启interpolateparams以减少roundtrip，见https://github.com/go-sql-driver/mysql#interpolateparams。
+// 4、PrepareStmt的零值是false，即GORM默认是不启用MySQL的预编译并缓存sql语句的功能的。
+//   为提高效率还可为MySQL开启interpolateparams以减少roundtrip，见https://github.com/go-sql-driver/mysql#interpolateparams
+//   上一行的意思是说，gorm和标准库一般都是先把带占位符？的sql语句（即无值的sql）发送给MySQL，然后再把相应的参数值发给MySQL，为提高效率可以
+//   先写好完整的带值的sql，再直接发给MySQL去执行。
+// 5、DisableAutomaticPing的零值是false，即GORM默认是会ping数据库的。
+// 6、AllowGlobalUpdate的零值是false，即GORM默认是不允许更新、删除全表的。
+// 7、其他的请看 2table-gormTag-gorm.model/5蛇形0对应上表&GORM的默认.txt
+//             2table-gormTag-gorm.model/6gorm标签&GORM的默认
+//             2table-gormTag-gorm.model/7gorm.model&GORM的默认
+//todo==================================================================================================================
+
+
+（完）

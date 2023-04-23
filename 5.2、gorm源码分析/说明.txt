@@ -1,0 +1,9 @@
+1、源码分析在线流程图网址  ：https://boardmix.cn/app/editor/NahPfqeRMaV-1SIHaHk-5A
+     或者将与本文件同级的gorm-ck-导出.bdx 文件 放入到 https://boardmix.cn/app/my-folder 页面中进行查看。
+
+2、或者直接查看pdf文件或jpg图片。
+
+
+3、配合 G:\golang_go0bian1cheng2_20200930\gorm@v1.23.3-ck 中的源码进行分析。
+
+

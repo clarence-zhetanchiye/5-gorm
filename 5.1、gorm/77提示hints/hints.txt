@@ -1,0 +1,21 @@
+1、使用索引--------------------------------hints---------------------------------
+索引提示允许传递索引提示到数据库，以防查询计划器出现混乱,能提高数据检索和SQL查询性能
+
+索引Index用于提高数据检索和sql查询性能。 Index Hints 向优化器提供了在查询处理过程中如何选择索引的信息。
+与 optimizer 相比，它可以更灵活地选择更有效的执行计划
+
+import "gorm.io/hints"
+
+db.Clauses(hints.UseIndex("idx_user_name")).Find(&User{})
+// SELECT * FROM `users` USE INDEX (`idx_user_name`)
+
+db.Clauses(hints.ForceIndex("idx_user_name", "idx_user_id").ForJoin()).Find(&User{})
+// SELECT * FROM `users` FORCE INDEX FOR JOIN (`idx_user_name`,`idx_user_id`)"
+
+db.Clauses(hints.ForceIndex("idx_user_name", "idx_user_id").ForOrderBy(),hints.IgnoreIndex("idx_user_name").ForGroupBy(),
+).Find(&User{})
+//SELECT * FROM `users` FORCE INDEX FOR ORDER BY (`idx_user_name`,`idx_user_id`) IGNORE INDEX FOR GROUP BY (`idx_user_name`)"
+
+2、更多可见 GORM官网/教程/性能,GORM官网/crud/高级查询/优化器索引提示,GORM官网/高级主题/提示
+
+（完）

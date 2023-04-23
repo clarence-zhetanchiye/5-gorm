@@ -1,0 +1,66 @@
+------------------------------hook钩子------------------------------------------
+钩子相当于是《MySQL从入门到精通》中的触发器trigger。
+
+1、钩子hook是结构体下的方法，在gorm语句经由该结构体对相应的数据表进行crud时，就会自动触发该结构体下相应的钩子。由于GORM的新增、修改、删除操作
+   会默认运行在事务上【由gorm.Open()中第二个入参&gorm.Config{}内的SkipDefaultTransaction字段配置，可以设置为true从而取消】,因此在事务
+   完成之前如果钩子返回了任何错误，则整个事务将回滚。
+
+    钩子只有也只能命名为以下这些：
+
+        新增型gorm语句能触发的钩子：
+        BeforeCreate(*gorm.DB) error   BeforeSave(*gorm.DB) error
+        AfterCreate(*gorm.DB) error    AfterSave(*gorm.DB) error
+
+        查询型gorm语句能触发的钩子：
+        AfterFind(*gorm.DB) error
+
+        修改型gorm语句能触发的钩子：
+        BeforeUpdate(*gorm.DB) error   BeforeSave(*gorm.DB) error
+        AfterUpdate(*gorm.DB) error    AfterSave(*gorm.DB) error
+
+        删除型gorm语句能触发的钩子：
+        BeforeDelete(*gorm.DB) error
+        AfterDelete(*gorm.DB) error
+
+2、gorm.Model{}这个GORM包中的结构体并没有内置好的钩子，自动用于记录增、改、删得到时间的字段，其被自动赋值并写入数据表的行为，与钩子无关，是在
+   执行相应的gorm语句时在代码逻辑中实现的。GORM依赖包中没有已经内置写好的会自动执行的上述钩子，
+
+=================================================钩子内的常见逻辑==========================================================
+3、BeforeSave钩子
+    若要在BeforeSave钩子中改变要更新的值，如果它是一个完整的更新，可以使用 Save；否则，应该使用 SetColumn ，例如：
+    func (user *User) BeforeSave(tx *gorm.DB) (err error) {
+      if pw, err := bcrypt.GenerateFromPassword(user.Password, 0); err == nil {
+        tx.Statement.SetColumn("EncryptedPassword", pw)
+      }
+      if tx.Statement.Changed("Code") {
+        s.Age += 20
+        tx.Statement.SetColumn("Age", s.Age+20)
+      }
+    }
+    db.Model(&user).Update("Name", "jinzhu")
+
+4、BeforeUpdate钩子
+    GORM提供了Changed方法，它可以被用在BeforeUpdate的钩子里，该Changed方法只能与Update、Updates方法一起使用,并且它只是检查将被update
+    的字段的值与Update、Updates中写的值是否相等,如果值将有变更,且字段没有被忽略,则返回 true。例如：
+    func (u *User) BeforeUpdate(tx *gorm.DB) (err error) {
+      // 如果 Role 字段将有变更
+        if tx.Statement.Changed("Role") {
+        return errors.New("role not allowed to change")
+        }
+      if tx.Statement.Changed("Name", "Admin") { // 如果 Name 或 Role 字段有变更
+        tx.Statement.SetColumn("Age", 18)
+      }
+      // 如果任意字段有变更
+        if tx.Statement.Changed() {
+            tx.Statement.SetColumn("RefreshedAt", time.Now())
+        }
+        return nil
+    }
+    db.Model(&User{ID: 1, Name: "jinzhu"}).Updates(map[string]interface{"name": "jinzhu2"})
+    // Changed("Name") => true
+    db.Model(&User{ID: 1, Name: "jinzhu"}).Updates(map[string]interface{"name": "jinzhu"})
+    // Changed("Name") => false, 因为 `Name` 将不会有变更
+
+5、更多见 GORM文档/教程/钩子
+
+（完）

@@ -1,0 +1,16 @@
+见GORM官方文档/CRUD接口/高级查询
+
+1、子查询---------------------------------------------------------------------
+子查询可以嵌套在查询中，GORM 允许在使用 *gorm.DB 对象作为参数时生成子查询
+db.Where("amount > (?)", db.Table("orders").Select("AVG(amount)")).Find(&orders)
+// SELECT * FROM orders WHERE amount > (SELECT AVG(amount) FROM orders);
+
+子查询可以嵌套在修改中
+db.Model(&user).Update("company_name", db.Model(&Company{}).Select("name").Where("companies.id = users.company_id"))
+// UPDATE "users" SET "company_name" = (SELECT name FROM companies WHERE companies.id = users.company_id);
+
+db.Table("users as u").Where("name = ?", "jinzhu").Update("company_name", db.Table("companies as c").Select("name").Where("c.id = u.company_id"))
+
+GORM 允许您在 Table 方法中通过 FROM 子句使用子查询，例如：
+db.Table("(?) as u", db.Model(&User{}).Select("name", "age")).Where("age = ?", 18}).Find(&User{})
+// SELECT * FROM (SELECT name,age FROM users) as u WHERE age = 18

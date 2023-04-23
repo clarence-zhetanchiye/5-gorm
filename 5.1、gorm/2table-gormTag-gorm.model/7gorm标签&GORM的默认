@@ -1,0 +1,205 @@
+---------概述gorm标签的作用 && 蛇形规则与gorm的默认-------------------------------------------------------------------------------
+
+    结构体字段的gorm标签的作用：
+    一是用于gorm语句中结构体字段与数据表列名的对应，这个通过下述 `gorm:"column:name"`及可能需要的`gorm:"embedded"`来实现；（表名则通
+过在gorm语句中的Table()入参中写数据库表的实际表名），
+    二是用于结构体迁移建表，这个通过下述系列标签来实现（生产中不建议迁移建表，而是事先写sql建表语句来建表）。
+
+    结构体字段没有gorm标签时：
+    那么在迁移建表和gorm语句(gorm语句中不通过Table()的入参指定而是通过解析Model()的结构体入参来对应要操作的数据库表名时)中，gorm会默认采
+用蛇形规则（结构体类型名与表名、字段与列名的对应规则），且默认字段ID（或Id）为自增主键、CreatedAt字段和UpdatedAt字段自动填充相应时间（即
+gorm包中gorm.model这个gorm中的结构体）。
+    当想把结构体内某个非ID或Id字段(gorm会自动默认ID或Id字段为主键)作为主键，则需要且只需要在该字段加上`gorm:"primaryKey"`，就可以实现主
+键的非空、不重复、一表只能有一个主键的属性的同时，gorm还额外默认了主键自增(相反，如果在该字段后面再加上autoMigrate的gorm标签却反而无法让其自增)
+
+    gorm标签对数据表列的描述或约束，和在海豚客户端或者CMD或者通过golang的sql包建表时的sql语句里的约束的作用是相同的。
+`create table my_comments (
+    comment_id bigint(10) primary key auto_increment,
+    sentence varchar(400) not null
+)
+`
+*如果迁移建表 和 gorm语句中，不想结构体的某字段成为数据库表的一列或不想和数据库表的列对应，则可以在该字段后使用标签 `gorm:"-"`
+
+
+
+---------结构体字段11种常用gorm标签讲解（gorm对标签名大小写不敏感，但建议驼峰风格）----------------------------------
+1、
+字段对应到数据库表中列的名称: `gorm:"column:name"`  todo:注意，不要试图在列名前加表名，即不要这样写 `gorm:"column:teachers.name`
+如果迁移建表和gorm语句中，不想结构体的某字段成为数据库表的一列或不想和数据库表的列对应，则可以在该字段后使用标签 `gorm:"-"`
+【todo:上面的name可自定义，通过column指定该字段对应的数据库表的列名后，gorm默认地让字段对应蛇形方式列名的机制就失效，
+      而是以column的值来确定字段与数据表列的对应关系。gorm语句中通过Table()入参指定表名后，gorm默认地让
+      结构体类型名对应蛇形方式表名的机制就失效。两相配合就可实现gorm与手动建表名和列名的关系变得完全自由】
+      例如：手动建的数据comments表的全部一条数据是
+    +------------+------------+------------------+------------+--------------------------------------+
+    | comment_id | sentence   | created_on       | created_by | uuid                                 |
+    +------------+------------+------------------+------------+--------------------------------------+
+    |     0     | bangbangda | 2020-11-02/12:22 | zhetan     | c9a5bfab-52b2-4320-7f83-40a047b322d2 |
+    +------------+------------+------------------+------------+--------------------------------------+
+    现在用GORM进行crud
+    type pingLun struct{
+        JuZi string `gorm:"column:sentence"` //本结构体字段承接数据库comments表的sentence一列的数据
+    }
+    var myRes []pingLun
+    db.Table("comments").Find(&myRes)       //虽然结构体名pingLun和表名comments并无蛇形对应关系，但Table()已指定
+    fmt.Println("myRes=",myRes)//myRes= [{bangbangda}]    可见成功了！！！！！
+
+2、
+继承字段:使用`gorm:"embedded"`标签来让GORM识别，以让有名继承字段参与到和数据库表的列的对应中。//参见3crud/1zeng1/我是说明.txt
+······
+对于匿名字段，GORM 会自动将其内字段包含在父结构体中，来参与到和数据库表的列的对应中，例如：
+type User struct {
+  gorm.Model
+  Name string
+}
+// 等效于
+type User struct {
+  ID        uint           `gorm:"primaryKey"`
+  CreatedAt time.Time
+  UpdatedAt time.Time
+  DeletedAt gorm.DeletedAt `gorm:"index"`
+  Name string
+}
+······
+对于继承的结构体字段，可以通过标签 embedded 将其嵌入，来让GORM识别从而参与到和数据库表的列的对应中，例如：
+type Author struct {
+    Name  string
+    Email string
+}
+type Blog struct {
+  ID      int
+  Author  Author `gorm:"embedded"`
+  Upvotes int32
+}
+// 等效于
+type Blog struct {
+  ID    int64
+    Name  string
+    Email string
+  Upvotes  int32
+}
+······
+embedded_prefix设置嵌入结构的前缀
+type Author struct {
+    Name  string
+    Email string
+}
+type Blog struct {
+    ID      int
+    Author  Author `gorm:"embedded;embeddedPrefix:author_"`
+    Upvotes int32
+}
+// 等效于
+type Blog struct {
+  ID          int64
+    AuthorName  string
+    AuthorEmail string
+  Upvotes     int32
+}
+
+3、gorm.Model{}
+GORM 默认使用字段 CreatedAt、UpdatedAt 来追踪新增/更新数据库表的一条数据的时间。因此若结构体中有这样名称的字段，GORM 在新增/更新数据库表
+的一条数据时，会自动填充 当前时间 至这些字段对应的列中。详见gorm/callbacks/callbacks.go中Register里的Update(config)和Create(config)
+todo 注意！！！！当gorm语句中使用的是 .UpdateColumn()时则不会给记录更新时间的字段赋值，详见3crud/3gai3/updateColumn.go
+todo:但不默认识别字段DeletedAt来追踪软删除的时间，而是结构体中有类型为gorm.DeletedAt的字段时自动启动软删除，并让该字段对应的列记录软删除时间。
+todo:另外关于软删除参见本整理 5.1、gorm/3crud/4shan1/softFlag.go
+如果想自定义字段名并让该自定义字段仍具备该功能，则可以在自定义字段后面配置 autoCreateTime、autoUpdateTime 标签，如下所示；
+如果您想要保存 UNIX（毫/纳）秒时间戳，而不是 time.Time，您只需简单地将 time.Time 修改为 int 即可，如下所示；
+type User struct {
+  CreatedAt time.Time // 在新增一条数据时，如果该字段值为零值，则GORM默认该特定名称的字段使用当前时间填充
+  CreatedAt time.Time `gorm:"autoCreatedTime:false"`// 在新增一条数据时，禁用GORM默认地向该特定名称的字段填充时间
+  Created   int64 `gorm:"autoCreateTime"`      // 用标签指定该字段填充新增一条记录时的时间，且int64确定了使用时间戳秒数填充新增时间
+  UpdatedAt int       // 在新增一条数据且该字段值为零值，或者在更新时，GORM默认该特定名称的字段使用当前时间戳秒数填充
+  UpdatedAt int   `gorm:"autoCreatedTime:false"`   // 在新增或更新一条数据时，禁用GORM默认地向该特定名称的字段填充时间
+  Updated   int64 `gorm:"autoUpdateTime:nano"` // 用标签指定该字段填充新增或更新一条记录时的时间，且使用时间戳填纳秒数充更新时间
+  Updated   int64 `gorm:"autoUpdateTime:milli"` // 用标签指定该字段填充新增或更新一条记录时的时间，且使用时间戳毫秒数填充更新时间
+}
+
+4、
+字段对应到数据库表中列的数据类型定义,如：
+`gorm:"type:decimal(7,2)"`
+`gorm:"type:varchar(20)"`   指定string类型字段的长度:  `gorm:"varchar(25)"`     `gorm:"size:64"`
+`gorm:"type:int(10)"`
+    字段数据类型推荐使用兼容性好的通用类型，例如：所有数据库都支持 bool、int、uint、float、string、time、
+    bytes 并且可以和其他标签一起使用，例如：not null、size, autoIncrement… 像 varbinary(8) 这样指定数
+    据库数据类型也是支持的。在使用指定数据库数据类型时，它需要是完整的数据库数据类型，如：MEDIUMINT UNSINED
+    not NULL AUTO_INCREMENT
+    precision列精度
+
+5、
+主键: `gorm:"primaryKey"`
+    【注意，标签有且仅有primaryKey后，该字段除已经具备 非空、不重复、一表仅一个主键的特性外，如果该字段还是整型，则gorm还额外默认其自增】
+    解除primaryKey字段的GORM同时默认的自增属性：`gorm:"primaryKey;autoIncrement:false"`
+
+6、
+自增：  `gorm:"autoIncrement`
+
+7、
+唯一性约束: `gorm:"unique"`
+非空约束  : `gorm:"not null"`
+check约束：`gorm:"check:name_checker,name <> 'jinzhu'"`
+                name_checker是check约束名，name <> 'jinzhu'是约束条件，字符串默认值使用单引号包裹
+
+8、
+默认值: `gorm:"default:-1"
+       `gorm:"default:true"`
+       `gorm:"default:'abc123'"`             字符串默认值使用单引号或\转义的双引号包裹
+       `gorm:"default:uuid_generate_v3()"`   默认调用MySQL数据库内的产生uuid的函数，从而在插入到数据库表中时插入一个随即的uuid值
+插入结构体到数据库表时，若该字段为零值，则数据库表中该字段对应的列会填充这里的默认值
+注意：对于加上gorm标签以指定默认值的字段，若指定的默认值是 0、''、false 等零值，那么这样的默认零值是不会保存到数据库，您需要使用指针类型
+     或 Scanner/Valuer 来避免这个问题（这句话源自GORM官方文档 CRUD接口/创建 ）
+
+9、
+索引: `gorm:"index:idx_user"`  idx_user是索引名,多个索引同名则是联合索引
+索引: `gorm:"type:varchar(100);index"
+唯一索引: `gorm:"uniqueIndex"`  也可以用  `gorm:"index:,unique"` 【index:的冒号不可少】，二者等价
+唯一索引且降序排列： `gorm:"uniqueIndex:idx_name,sort:desc"`
+更多索引标签： `gorm:"index:,sort:desc,collate:utf8,type:btree,length:10,expression:ABS(age),where:name3 != 'jinzhu'"`
+            【上一行的index:的冒号不能少】
+复合索引：
+    复合索引列的顺序会影响其性能，因此必须仔细考虑，您可以使用 priority 指定顺序，默认
+    优先级值是 10，如果优先级值相同，则顺序取决于模型结构体字段的顺序
+    type User struct {
+        Name   string `gorm:"index:idx_member"`
+        Number string `gorm:"index:idx_member"`
+    }                                       // column order: name, number
+    type User struct {
+        Name   string `gorm:"index:idx_member,priority:2"`
+        Number string `gorm:"index:idx_member,priority:1"`
+    }                                       // column order: number, name
+    type User struct {
+        Name   string `gorm:"index:idx_member,priority:12"`
+        Number string `gorm:"index:idx_member"`
+    }                                       // column order: number, name
+
+多索引：
+    一个字段接受多个 index、uniqueIndex 标签，这会在一个字段上创建多个索引
+    type UserIndex struct {
+        OID          int64  `gorm:"index:idx_id;index:idx_oid,unique"`
+        MemberNumber string `gorm:"index:idx_id"`
+    }
+
+10、
+外键约束：`gorm:"foreignKey:CardCode;references:UserCode"`
+               CardCode是被指定为外键的字段，UserCode是被指定为被参照的字段。外键约束写在继承结构体后面
+外键动作约束： `gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`  外键动作约束写在继承结构体后面
+多态关联约束： `gorm:"polymorphic:Owner"`  Owner是多态名，可自定义        多态关联约束写在继承结构体后面
+多态关联约束： `gorm:"polymorphic:Owner;polymorphicValue:master"`  具体解释可见gorm官网Has One
+many对many关联指定关联表名：  `gorm:"many2many:user_languages"`          写在继承结构体后面
+many对many关联指定关联表的外键和参照：`gorm:"many2many:user_profiles;joinForeignKey:UserReferID;JoinReferences:UserRefer"`
+
+11、
+可导出的字段在使用 GORM 进行 CRUD 时拥有全部的权限，此外，GORM 允许您用标签控制字段级别的权限。
+使用 GORM Migrator 创建表时，不会创建`gorm:"-"`这种被忽略的字段
+type User struct {
+  Name string `gorm:"<-:create"` // 允许读和创建
+  Name string `gorm:"<-:update"` // 允许读和更新
+  Name string `gorm:"<-"`        // 允许读和写（创建和更新）
+  Name string `gorm:"<-:false"`  // 允许读，禁止写
+  Name string `gorm:"->"`        // 只读（除非有自定义配置，否则禁止写）
+  Name string `gorm:"->;<-:create"` // 允许读和写
+  Name string `gorm:"->:false;<-:create"` // 仅创建（禁止从 db 读）
+  Name string `gorm:"-"`  // 读写操作均会忽略该字段
+}
+
+
+（完）

@@ -1,0 +1,27 @@
+-------------------------------------Callback-----------------------------------------
+
+1、 Callback的功能其实和钩子hook【即《MySQL从入门到精通》书中的触发器trigger】类似，
+   只是钩子hook是和结构体一起的，在经由结构体进行crud时会自动被触发；而Callback回调是
+   注册到全局*gorm.DB的，从数据库获取的同一*gorm.DB下的任意crud都会触发注册在该*gorm.DB
+   下的相应crud类别的Callback，即增查改删会分别触发注册的Create、Query、Update、Delete
+   类别的Callback回调【全部Callback回调包括 Create、Query、Update、Delete、Row、Raw】
+   例如：
+   db.Callback().Create().Register("crop_image", cropImage)//就是为Create流程注册了一
+   个callback，其中"crop_image"是可自定义的回调函数的名称，cropImage是自定义回调函数，其
+   函数类型(也被成为签名)必须是func(*DB)；注册后只要是该db下的任意结构体的create操作，都会
+   自动触发该cropImage回调函数。
+
+2、注册带顺序的Callback,则在被触发的时候也是按先后顺序被触发的。见22gorm/3hook0callback/main.go:40
+
+3、同类型(如Create)下的before钩子比callback先被调用,GORM的crud语句在执行到Finisher方法时，触发？？？？？？？？？？？？
+
+4、对已注册的回调的增查改善，详细可鼠标悬浮后查看更多
+    6.1、删除掉一个已注册的回调
+      db.Callback().Create().Remove("gorm:create")
+            // 从Create流程的callbacks中删除名为`gorm:create`的callback
+    6.2、用一个新的回调替换已有的同名回调
+      db.Callback().Create().Replace("gorm:create", newCreateFunction)
+      // 用新回调函数 newCreateFunction 替换 Create 流程内的callbacks中名为`gorm:create`的callback回调函数
+
+5、callback与插件的关系，参见go0ji1chu3/22gorm/10gorm0wen2dang3/gorm官方文档.txt:380
+

@@ -1,0 +1,2 @@
+gormDb, err = gorm.Open(mysql.Open(dsn), &gorm.Config{}) 中的驱动mysql.Open(dsn)里的源码的Initialize方法，就可以看到gorm内
+是通过标准库database/sql 里的方法获取个数据库的连接的。可以看本地依赖库中的gorm.io/driver/mysql v1.3.3 包内代码中自己的注释。

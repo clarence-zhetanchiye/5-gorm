@@ -1,0 +1,64 @@
+1、AutoMigrate{&student}采用蛇形规则自动新建数据库表，同时会将结构体中包括继承的全部开头大写的字段均作为数据库表的column一列。小写字段不会
+  成为数据库表的一列，新增时小写字段的值也不会保存进数据库表。另外对于继承，有A、B两种细分情况：
+    A、当结构体a中某些字段是匿名继承的时候，其内的字段会和a内的其他一般字段一样被一视同仁。
+    B、当结构体a中的某些字段是有名继承的时候，则该有名继承字段整个会被当做外来的:
+        (1)想要和a中其他字段一样被一视同仁对待，需使用`gorm:"embedded"`标签。
+        (2)否则需要在其后用gorm标签指定外键和参照，以方便当前结构体和该有名继承字段所代表的结构体之间完成关联。详见2foreignKey0guan1lian2。
+2、建议gorm语句中使用Create(结构体)的方式新增一条和Create(结构体切片)的形式批量新增以及Select()来选择性存字段，不建议用map和map切片的形式
+3、记得&符号不能少(虽然以map和map切片的形式新增的示例中，官网没&，但建议都加上&)
+
+
+示例1
+    对于匿名字段，GORM 会将其字段包含在父结构体中，例如：
+    type User struct {
+      gorm.Model
+      Name string
+    }
+    // 等效于
+    type User struct {
+       ID        uint           `gorm:"primaryKey"`
+       CreatedAt time.Time
+       UpdatedAt time.Time
+       DeletedAt gorm.DeletedAt `gorm:"index"`
+      Name string
+    }
+
+示例2
+    type Author struct {
+        Name  string
+        Email string
+    }
+    type Blog struct {
+      ID      int
+      Author  Author `gorm:"embedded"`
+      Votes int32
+    }
+    // 等效于
+    type Blog struct {
+      ID    int64
+        Name  string
+        Email string
+      Votes  int32
+    }
+
+示例3
+    type Author struct {
+        Name  string
+        Email string
+    }
+    type Blog struct {
+      ID      int
+      Author  Author `gorm:"embedded;embeddedPrefix:author_"`
+      Votes int32
+    }
+    // 等效于
+    type Blog struct {
+      ID          int64
+        AuthorName  string
+        AuthorEmail string
+      Votes     int32
+    }
+
+
+
+（完）

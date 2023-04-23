@@ -1,0 +1,36 @@
+-----------------------------------“主”、“从”、foreignKey、references、gorm的默认、preload---------------------------------
+0、官方文档中叫关联，其实就是结构体内含有继承的其他结构体；当被继承的结构体在数据库中也有自己的一张表，则的确由结构体到数据库表的迁移对应关系
+   的同时，结构体的继承体现出数据库表的关联。
+0、“从” 和 “主”  是由foreignKey【外键】和references【被参照】来决定的，有字段是foreignKey外键的，该字段所在结构体是”从“；有字段
+  是references被参照的，被参照字段所在结构体是“主”。“主”必须有primaryKey---参见MySQL222页
+
+0、通过foreignKey外键和references被参照字段关联了两到多个结构体【也即关联了他们对应的数据库表】，由AutoMigrate(...)
+   将这两到多个结构体都在数据库迁移建表后，当将某一结构体stru的数据新增进相应的数据库表strus时，该结构体stru若
+   有继承的其他结构体类型twoStru，则该被继承的结构体类型twoStru字段的数据不新增进strus，而是新增进该继承结构
+   体类型对应的数据库表twoStrus。----todo:这就是gorm经由结构体迁移对数据库表间的关联！
+
+1、无自定义和指明的情况下，gorm默认每个结构体的ID[或Id]字段为primaryKey,Auto_increment。(Auto_increment可
+   以手动取消)。
+
+2、如不通过gorm标签指定foreignKey外键和references被参照字段，则默认是“从”结构体中的--“主”的结构体名加上其primaryKey字段【如继
+   承gorm.Model，则是加上gorm.Model中的ID】名组合成的--字段作为foreignKey外键【结构体名不建议夹杂数字！】，如本例中的companyID。
+   并默认“主”的primaryKey字段【“主”的ID字段被gorm默认为primaryKey,如“主”继承了gorm.Model，则是gorm.Model
+   内的ID，或者标签自定义的primaryKey字段】作为references被参照字段。
+
+3、对foreignKey外键和references被参照字段进行自定义的，自定义的foreignKey和references及其constraint约束的OnUpdate、OnDelete全部都
+   要写在相应的“主”继承的结构体类型字段后面的gorm标签内。
+   OnUpdate、OnDelete的约束参见 GORM官网/高级主题/约束  和《MySQL从入门到精通》221页，可选值有RESTRICT、
+   CASCADE、 SET NULL 、 NO ACTION  共四个
+
+4、因为被参照的字段在数据表中必须是不重复的，故“主”中被参照的字段【references】，必须是primaryKey或unique；
+   且和“从”中的外键【foreignKey】字段的数据类型必须一致，因为foreignKey字段放的就是references字段的值。
+   另外，由于主键和unique必须是长度固定的，故TEXT/BLOB可变长度类型的数据，不能指定为主键或unique；又由于
+   使用gorm时，对于字段是string类型的，gorm在创建表时会将其设定为TEXT/BLOB，故最
+   好把要设定为primaryKey或unique的字段的类型定为整型，或在gorm标签中指定string
+   类型字段的长度【例如 gorm:"size:64"】后，也可以设定为primaryKey或unique
+
+5、preload预加载的详细解释，见6preload2crud的 我的说明.txt
+
+6、polymorphic	指定多态类型   polymorphicValue	指定多态值、默认表名  等不懂
+
+（完）

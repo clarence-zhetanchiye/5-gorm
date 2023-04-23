@@ -1,0 +1,4 @@
+见 GORM官方文档/教程/性能
+都是提高性能的办法。特别的，其中的hints，另外见 5.1、gorm/17hints/hints.txt
+
+

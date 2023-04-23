@@ -1,0 +1,80 @@
+1、GORM默认在事务里执行 增、改、删 操作以确保数据一致性。如果没有这方面的要求，在初始化时
+    禁用它，这将获得大约 30%+ 性能提升。
+          db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{
+            SkipDefaultTransaction: true,     // 全局禁用默认的事务
+          })
+
+2、Transaction方法开启事务：
+   Transaction(fc func(tx *gorm.DB) error, opts ...*sql.TxOptions) (err error)
+   //opts是有两个字段的结构体，用于指定是否只读和事务的孤立级 参见《MySQL从入门到精通》262页
+
+   示例：todo【db调用Transaction，点进源码可以看到它会将db自己传给Transaction内第一个入参func(tx *gorm.DB) error的形参tx，第一个入
+        参func(tx *gorm.DB) error 函数体内的gorm语句则应当使用形参tx。点进Transaction源码可知，内部本质上仍是用的 4、手动事务】
+    db.Transaction(func(tx *gorm.DB) error {
+        // 在事务中执行crud操作（从这里开始，您应该使用 'tx' 而不是 'db'）
+        if err := tx.Create(&Animal{Name: "Giraffe"}).Error; err != nil {
+          return err  //如果返回了错误，伴随着就会回滚整个事务
+        }
+        if err := tx.Create(&Animal{Name: "Lion"}).Error; err != nil {
+          return err  //如果返回了错误，伴随着就会回滚整个事务
+        }
+        return nil  // 返回nil 就会伴随着提交事务
+      }, &sql.TxOptions{})
+
+3、Transaction型事务的嵌套
+    示例：因第二个事务出错而发生回滚，故最终仅提交 user1, user3
+    DB.Transaction(func(tx *gorm.DB) error {
+        tx.Create(&user1)
+        //嵌套一个事务
+            tx.Transaction(func(tx2 *gorm.DB) error {
+              tx2.Create(&user2)
+              return errors.New("rollback user2") // 回滚 user2
+            })
+        //又嵌套一个事务
+            tx.Transaction(func(tx2 *gorm.DB) error {
+              tx2.Create(&user3)
+              return nil                        //提交了user3
+        })
+    return nil                                  //提交了user3、user1
+  })
+
+4、手动事务
+    // 开始事务
+   tx := db.Begin() //我：事务并非新的会话，依然是旧db的后续，用tx以示区分
+
+   ...   // 在事务中执行一些 crud 操作（从这里开始，您应该使用 'tx' 而不是 'db'）
+   tx.Create(...)   //其他的gorm的crud语句都行
+   ...
+   tx.Rollback() // 对错误进行判断，一旦遇到错误立即回滚事务
+   ...
+   tx.Commit()  //提交事务，事务完毕
+
+4、手动事务（一个示例）   【下面这个就是程序员自己自定义的一个函数，调用时只需传一个db进去即可】
+    func CreateAnimals(db *gorm.DB) error {
+      tx := db.Begin() //再唠叨一下，事务一旦开始，你就应该使用tx处理数据
+      defer func() {
+        if r := recover(); r != nil {
+          tx.Rollback()//recover捕捉错误，一旦捕捉到错误，就立即回滚事务
+        }
+      }()
+      if err := tx.Error; err != nil {
+        return err
+      }
+      if err := tx.Create(&Animal{Name: "Giraffe"}).Error; err != nil {
+         tx.Rollback()
+         return err
+      }
+      return tx.Commit().Error
+    }
+
+6、事务的部分回滚SavePoint、RollbackTo
+   GORM 提供了 SavePoint、Rollbackto 来提供保存点以及回滚至保存点
+        示例：
+        tx := DB.Begin()
+        tx.Create(&user1)
+        tx.SavePoint("sp1")
+        tx.Create(&user2)
+        tx.RollbackTo("sp1") // 回滚 user2
+        tx.Commit() // 最终仅提交 user1
+
+（完）

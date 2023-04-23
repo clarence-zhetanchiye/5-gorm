@@ -1,0 +1,83 @@
+1、Scopes()
+(1)、Scopes()的入参需是一个签名为func(*gorm.DB) *gorm.DB的函数fx，且该函数体内需最终return一个末尾没有finisher方法的入参db开头的gorm
+     链式调用，或仍return入参。
+     这样就可以在写gorm语句时写上.Scopes(fx) ；如此就实现了将fx中的链式调用拼接到外层gorm语句链式调用中。
+(2)、由此可见，只在函数fx中写一次的链式逻辑，借助是否写入.Scopes()就能可选地被决定是否拼接到各个gorm语句中。
+
+2、Scopes()使用示例（全部示例可见 GORM官方文档/教程/Scope）
+示例1：-----------------------------------------------------------------------------------------------------------------
+   func AmountBig10(db *gorm.DB) *gorm.DB {
+     return db.Where("amount > ?", 1000)
+   }
+   db.Scopes(AmountBig10).Find(&orders)
+   //SELECT * FROM orders WHERE amount > 1000;   查找所有金额大于10的订单
+
+   func OrderStatus(status []string) func (db *gorm.DB) *gorm.DB {
+     return func (db *gorm.DB) *gorm.DB {
+       return db.Where("status IN (?)", status)
+     }
+   }
+   db.Scopes(AmountBig10, OrderStatus([]string{"paid", "shipped"})).Find(&orders)
+   //SELECT * FROM orders WHERE amount > 1000 AND status IN ("paid", "shipped"); 查找所有金额大于10，并且状态为已付款或已发货的订单
+
+实例2：分页器-------------------------------------------------------------------------------------------------------------
+   func Paginate(r *http.Request) func(db *gorm.DB) *gorm.DB {
+     return func (db *gorm.DB) *gorm.DB {
+       page, _ := strconv.Atoi(r.Query("page"))
+       if page == 0 {
+         page = 1
+       }
+       pageSize, _ := strconv.Atoi(r.Query("page_size"))
+       switch {
+       case pageSize > 100:
+         pageSize = 100
+       case pageSize <= 0:
+         pageSize = 10
+       }
+       offset := (page - 1) * pageSize
+       return db.Offset(offset).Limit(pageSize)
+     }
+   }
+   db.Scopes(Paginate(r)).Find(&users) //上面Paginate中的.Offset(..).Limit(..)就会写进这个gorm语句里。
+   db.Scopes(Paginate(r)).Find(&articles) //上面Paginate中的.Offset(..).Limit(..)就会写进这个gorm语句里。
+
+示例3：动态选择数据表名----------------------------------------------------------------------------------------------------
+    func TableOfYear(user *User, year int) func(db *gorm.DB) *gorm.DB {
+      return func(db *gorm.DB) *gorm.DB {
+            tableName := user.TableName() + strconv.Itoa(year)
+            return db.Table(tableName)
+      }
+    }
+    DB.Scopes(TableOfYear(user, 2019)).Find(&users)// SELECT * FROM users_2019;
+    DB.Scopes(TableOfYear(user, 2020)).Find(&users)// SELECT * FROM users_2020;
+
+    //获得不同数据库的数据表名
+    func TableOfOrg(user *User, dbName string) func(db *gorm.DB) *gorm.DB {
+      return func(db *gorm.DB) *gorm.DB {
+            tableName := dbName + "." + user.TableName()
+            return db.Table(tableName)
+      }
+    }
+    DB.Scopes(TableOfOrg(user, "org1")).Find(&users)// SELECT * FROM org1.users;
+    DB.Scopes(TableOfOrg(user, "org2")).Find(&users)// SELECT * FROM org2.users;
+
+示例4:更新前查询是否存在---------------------------------------------------------------------------------------------------
+    func CurOrganization(r *http.Request) func(db *gorm.DB) *gorm.DB {
+      return func (db *gorm.DB) *gorm.DB {
+        org := r.Query("org")
+        if org != "" {
+          var organization Organization
+          if db.Session(&Session{}).First(&organization, "name = ?", org).Error == nil {
+            return db.Where("org_id = ?", org.ID)
+          }
+        }
+        db.AddError("invalid organization")
+        return db
+      }
+    }
+    db.Model(&article).Scopes(CurOrganization(r)).Update("Name", "name 1")
+    // UPDATE articles SET name = "name 1" WHERE org_id = 111
+    db.Scopes(CurOrganization(r)).Delete(&Article{})
+    // DELETE FROM articles WHERE org_id = 111
+
+（完）

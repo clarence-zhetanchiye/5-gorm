@@ -1,0 +1,27 @@
+0、 查询的sql语句的骨架关键词的相对顺序是：
+   SELECT .*.  FROM ... JOIN ...  WHERE[NOT OR AND] .. GROUP BY  ... HAVING[AND OR AND NOT] .*. ORDER BY ... LIMIT ...;
+   另外DISTINCT关键词只能在第一处.*.被使用，COUNT()、SUM()、AVG()等可以在上述两处 .*. 位置使用。
+   这个骨架中的关键词在MySQL中的解析顺序是：
+   JOIN ----> WHERE[NOT OR AND] ----> GROUP BY ... HAVING[AND OR AND NOT] ----> SELECT ----> ORDER BY ----> LIMIT
+
+1、
+   gorm语句中的db指明了是查询Mysql的哪个数据库(因为该db是针对该数据库名Open而获得的)。
+   gorm语句中的.Find(&v)内的v作为查询结果接收者，v的类型需是与被查询数据库表名一致的结构体类型名（区别只是蛇形）(也即当初创
+   建表时的那个结构体的类型名)，v的类型表明了是从数据库的哪个表查询；
+   gorm语句中也可显示地通过Table()指定数据库表（若.Find(&v)内的v是自定义类型的结构体，则必须通过Table()指明表），且.Find(&v)内的v的结构
+   体类型中的字段需和该数据库表每列字段一致(区别只是蛇形)，或借助gorm的column标签让结构体中的每个字段与表中的列对应，不一致的字段接收不到查
+   询结果，但也不坏事。参见 2cha2/cha2.go:29 建议多用Find()来查询。
+1.1、
+   First(&v)、Last(&v)、Take(&v)这几个的入参&v中的v的特性，和上一条中的Find(&v)中的v的说明是一样的。
+   Find()是查询符合条件的所有条[一条或多条],First()是查询符合条件的排序后的第一条,Last()是查询符合条件的排序后的最后一条,Take()是查询符
+   合条件的任意一条。排序是依据主键id升序，若无主键，则按v的第一个字段进行排序。但需注意：GORM文档/CRUD接口/查询/检索单个对象中第二块示例
+1.2、
+   First()、Last()、Take()
+   db.First(&user) // 获取第一条记录（主键升序）==> SELECT * FROM users ORDER BY id LIMIT 1;
+   db.Take(&user) // 获取一条记录，没有指定排序字段 ==> SELECT * FROM users LIMIT 1;
+   db.Last(&user) // 获取最后一条记录（主键降序）==> SELECT * FROM users ORDER BY id DESC LIMIT 1;
+   result := db.First(&user) //若没有查询到数据，result.Error中会得到gorm定义的ErrRecordNotFound错误
+   errors.Is(result.Error, gorm.ErrRecordNotFound)  // 检查 ErrRecordNotFound 错误
+   如果你想避免ErrRecordNotFound错误，你可以使用Find()，比如db.Limit(1).Find(&user)，其中Find(&v)里的v可以是struct或slice类型。
+
+2、查询时，只用得上部分字段就别查询全部字段然后只用部分字段，因为SELECT * 即查询全部字段效率更低。具体使用见 cha/ 文件夹下的各个.go文件。
